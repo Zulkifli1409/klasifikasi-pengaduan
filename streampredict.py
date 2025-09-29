@@ -1,7 +1,6 @@
 import streamlit as st
 import torch
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
-from safetensors.torch import load_file
 import pandas as pd
 import plotly.graph_objects as go
 from datetime import datetime
@@ -73,24 +72,15 @@ st.markdown(
 # ===============================================
 @st.cache_resource
 def load_model():
-    """Load model dan tokenizer (cached)"""
+    """Load model dan tokenizer dari Hugging Face (cached)"""
     try:
-        model_name = "indobenchmark/indobert-base-p1"
+        model_name = "Zulkifli1409/aduan-model"
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        # Load tokenizer
+        # Load tokenizer dan model langsung dari Hugging Face
         tokenizer = AutoTokenizer.from_pretrained(model_name)
-
-        # Load model architecture
-        model = AutoModelForSequenceClassification.from_pretrained(
-            model_name,
-            num_labels=3,
-            use_safetensors=True,
-        )
-
-        # Load trained weights
-        state_dict = load_file("best_model.safetensors", device=str(device))
-        model.load_state_dict(state_dict)
+        model = AutoModelForSequenceClassification.from_pretrained(model_name)
+        
         model = model.to(device)
         model.eval()
 
@@ -193,16 +183,16 @@ def main():
     )
 
     # Load model
-    with st.spinner("⏳ Loading model..."):
+    with st.spinner("⏳ Loading model dari Hugging Face..."):
         model, tokenizer, device = load_model()
 
     if model is None:
         st.error(
-            "❌ Gagal memuat model. Pastikan file 'best_model.safetensors' ada di folder yang sama."
+            "❌ Gagal memuat model dari Hugging Face. Periksa koneksi internet Anda."
         )
         return
 
-    st.success(f"✅ Model berhasil dimuat! (Device: {device})")
+    st.success(f"✅ Model berhasil dimuat dari Hugging Face! (Device: {device})")
 
     # Sidebar - Info
     with st.sidebar:
@@ -255,35 +245,13 @@ def main():
     with tab1:
         st.subheader("Masukkan Aduan")
 
-        col1, col2 = st.columns([3, 1])
-
-        with col1:
-            # Text input
-            text_input = st.text_area(
-                "Teks Aduan:",
-                height=150,
-                placeholder="Contoh: Ada kebakaran besar di pasar tradisional...",
-                help="Masukkan teks aduan yang ingin diklasifikasi",
-            )
-
-        with col2:
-            st.markdown("**Contoh Aduan:**")
-            examples = [
-                "Ada kebakaran besar di pasar",
-                "Jalan berlubang perlu diperbaiki",
-                "Mohon info jadwal posyandu",
-                "Tolong ada orang kecelakaan parah",
-                "Sampah menumpuk di jalan",
-            ]
-
-            for i, ex in enumerate(examples):
-                if st.button(f"📌 Contoh {i+1}", key=f"ex_{i}"):
-                    st.session_state.example_text = ex
-
-            if "example_text" in st.session_state:
-                text_input = st.session_state.example_text
-                del st.session_state.example_text
-                st.rerun()
+        # Text input
+        text_input = st.text_area(
+            "Teks Aduan:",
+            height=150,
+            placeholder="Contoh: Ada kebakaran besar di pasar tradisional...",
+            help="Masukkan teks aduan yang ingin diklasifikasi",
+        )
 
         # Predict button
         if st.button("🚀 Klasifikasi Aduan", type="primary", use_container_width=True):
