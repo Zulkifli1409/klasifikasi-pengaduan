@@ -1,9 +1,11 @@
 import streamlit as st
 import torch
-from transformers import AutoTokenizer, AutoModelForSequenceClassification
+from transformers import AutoTokenizer, AutoModelForSequenceClassification, AutoConfig
+from safetensors.torch import load_file
 import pandas as pd
 import plotly.graph_objects as go
 from datetime import datetime
+import os
 
 # ===============================================
 # PAGE CONFIG
@@ -55,6 +57,11 @@ st.markdown(
         border-color: #17a2b8;
         color: #0c5460;
     }
+    .lainnya {
+        background-color: #e2e3e5;
+        border-color: #6c757d;
+        color: #383d41;
+    }
     .metric-card {
         background-color: #f8f9fa;
         padding: 1rem;
@@ -72,30 +79,35 @@ st.markdown(
 # ===============================================
 @st.cache_resource
 def load_model():
-    """Load model dan tokenizer dari Hugging Face (cached)"""
+    """Load model dan tokenizer dari Hugging Face"""
     try:
-        model_name = "Zulkifli1409/aduan-model"
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-        # Load tokenizer dan model langsung dari Hugging Face
+        
+        st.info("Loading model from Hugging Face Hub...")
+        model_name = "Zulkifli1409/aduan-model"
+        
         tokenizer = AutoTokenizer.from_pretrained(model_name)
-        model = AutoModelForSequenceClassification.from_pretrained(model_name)
+        model = AutoModelForSequenceClassification.from_pretrained(
+            model_name,
+            use_safetensors=True
+        )
         
         model = model.to(device)
         model.eval()
-
-        return model, tokenizer, device
+        
+        return model, tokenizer, device, "huggingface"
+            
     except Exception as e:
-        st.error(f"❌ Error loading model: {str(e)}")
-        return None, None, None
-
+        st.error(f"Error loading model: {str(e)}")
+        return None, None, None, None
 
 # ===============================================
 # PREDIKSI FUNCTION
 # ===============================================
 def predict_aduan(text, model, tokenizer, device):
-    """Prediksi kategori aduan"""
-    label_map = {0: "DARURAT", 1: "PRIORITAS", 2: "UMUM"}
+    """Prediksi kategori aduan - FIXED untuk 4 kelas"""
+    # FIXED: 4 labels sesuai training
+    label_map = {0: "DARURAT", 1: "PRIORITAS", 2: "UMUM", 3: "LAINNYA"}
 
     # Tokenize
     encoding = tokenizer.encode_plus(
@@ -127,6 +139,7 @@ def predict_aduan(text, model, tokenizer, device):
             "DARURAT": probs[0].item() * 100,
             "PRIORITAS": probs[1].item() * 100,
             "UMUM": probs[2].item() * 100,
+            "LAINNYA": probs[3].item() * 100,  # FIXED: tambah label ke-4
         },
     }
 
@@ -137,12 +150,12 @@ def predict_aduan(text, model, tokenizer, device):
 # VISUALISASI
 # ===============================================
 def create_probability_chart(probs):
-    """Buat bar chart untuk probabilitas"""
+    """Buat bar chart untuk probabilitas - FIXED untuk 4 kelas"""
     labels = list(probs.keys())
     values = list(probs.values())
 
-    # Warna sesuai kategori
-    colors = ["#dc3545", "#ffc107", "#17a2b8"]
+    # Warna sesuai kategori (FIXED: 4 warna)
+    colors = ["#dc3545", "#ffc107", "#17a2b8", "#6c757d"]
 
     fig = go.Figure(
         data=[
@@ -183,16 +196,19 @@ def main():
     )
 
     # Load model
-    with st.spinner("⏳ Loading model dari Hugging Face..."):
-        model, tokenizer, device = load_model()
+    with st.spinner("Loading model..."):
+        model, tokenizer, device, source = load_model()
 
     if model is None:
         st.error(
-            "❌ Gagal memuat model dari Hugging Face. Periksa koneksi internet Anda."
+            "❌ Gagal memuat model. Pastikan file 'best_model_advanced.safetensors' ada di folder yang sama."
         )
         return
 
-    st.success(f"✅ Model berhasil dimuat dari Hugging Face! (Device: {device})")
+    if source == "local":
+        st.success(f"✅ Model berhasil dimuat dari file lokal! (Device: {device})")
+    else:
+        st.success(f"✅ Model berhasil dimuat dari Hugging Face! (Device: {device})")
 
     # Sidebar - Info
     with st.sidebar:
@@ -203,6 +219,7 @@ def main():
         - 🔴 **DARURAT**: Memerlukan penanganan segera (kebakaran, kecelakaan, bencana)
         - 🟡 **PRIORITAS**: Perlu penanganan cepat (infrastruktur rusak, kebersihan)
         - 🔵 **UMUM**: Informasi/pertanyaan umum
+        - ⚫ **LAINNYA**: Aduan lain yang tidak termasuk kategori di atas
         
         ---
         **Cara Pakai:**
@@ -210,6 +227,14 @@ def main():
         2. Masukkan teks aduan
         3. Klik tombol prediksi
         4. Lihat hasil klasifikasi
+        
+        ---
+        **Akurasi Model:**
+        - Overall: 93.89%
+        - Darurat: 92.78%
+        - Prioritas: 90.00%
+        - Umum: 97.78%
+        - Lainnya: 95.00%
         """
         )
 
@@ -225,9 +250,13 @@ def main():
             # Count by category
             cat_counts = df_hist["Kategori"].value_counts()
             for cat, count in cat_counts.items():
-                emoji = (
-                    "🔴" if cat == "DARURAT" else "🟡" if cat == "PRIORITAS" else "🔵"
-                )
+                emoji_map = {
+                    "DARURAT": "🔴",
+                    "PRIORITAS": "🟡",
+                    "UMUM": "🔵",
+                    "LAINNYA": "⚫"
+                }
+                emoji = emoji_map.get(cat, "⚪")
                 st.metric(f"{emoji} {cat}", count)
 
     # Initialize session state
@@ -266,11 +295,13 @@ def main():
 
                 # Result box
                 box_class = result["label"].lower()
-                emoji = (
-                    "🔴"
-                    if result["label"] == "DARURAT"
-                    else "🟡" if result["label"] == "PRIORITAS" else "🔵"
-                )
+                emoji_map = {
+                    "DARURAT": "🔴",
+                    "PRIORITAS": "🟡",
+                    "UMUM": "🔵",
+                    "LAINNYA": "⚫"
+                }
+                emoji = emoji_map[result["label"]]
 
                 st.markdown(
                     f"""
@@ -282,19 +313,20 @@ def main():
                     unsafe_allow_html=True,
                 )
 
-                # Metrics
-                col1, col2, col3 = st.columns(3)
+                # Metrics (FIXED: 4 kolom)
+                col1, col2, col3, col4 = st.columns(4)
 
                 with col1:
                     st.metric("🔴 DARURAT", f"{result['all_probs']['DARURAT']:.2f}%")
 
                 with col2:
-                    st.metric(
-                        "🟡 PRIORITAS", f"{result['all_probs']['PRIORITAS']:.2f}%"
-                    )
+                    st.metric("🟡 PRIORITAS", f"{result['all_probs']['PRIORITAS']:.2f}%")
 
                 with col3:
                     st.metric("🔵 UMUM", f"{result['all_probs']['UMUM']:.2f}%")
+                
+                with col4:
+                    st.metric("⚫ LAINNYA", f"{result['all_probs']['LAINNYA']:.2f}%")
 
                 # Chart
                 st.plotly_chart(
@@ -390,12 +422,13 @@ def main():
 
                 st.success(f"✅ Selesai! {len(texts)} aduan telah diklasifikasi")
 
-                # Summary
-                col1, col2, col3 = st.columns(3)
+                # Summary (FIXED: 4 kolom)
+                col1, col2, col3, col4 = st.columns(4)
 
                 darurat_count = (df_results["Kategori"] == "DARURAT").sum()
                 prioritas_count = (df_results["Kategori"] == "PRIORITAS").sum()
                 umum_count = (df_results["Kategori"] == "UMUM").sum()
+                lainnya_count = (df_results["Kategori"] == "LAINNYA").sum()
 
                 with col1:
                     st.metric("🔴 DARURAT", darurat_count)
@@ -403,6 +436,8 @@ def main():
                     st.metric("🟡 PRIORITAS", prioritas_count)
                 with col3:
                     st.metric("🔵 UMUM", umum_count)
+                with col4:
+                    st.metric("⚫ LAINNYA", lainnya_count)
 
                 # Display table
                 st.dataframe(
