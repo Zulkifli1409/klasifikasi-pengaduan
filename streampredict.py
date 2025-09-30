@@ -79,24 +79,30 @@ st.markdown(
 # ===============================================
 @st.cache_resource
 def load_model():
-    """Load model dan tokenizer dari Hugging Face"""
     try:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        
+
         st.info("Loading model from Hugging Face Hub...")
         model_name = "Zulkifli1409/aduan-model"
-        
+
         tokenizer = AutoTokenizer.from_pretrained(model_name)
+
+        # 🔥 Paksa config num_labels = 4
+        config = AutoConfig.from_pretrained(model_name)
+        config.num_labels = 4  
+
         model = AutoModelForSequenceClassification.from_pretrained(
             model_name,
-            use_safetensors=True
+            config=config,          # gunakan config yg sudah diperbaiki
+            use_safetensors=True,
+            ignore_mismatched_sizes=True  # biar nggak error mismatch
         )
-        
+
         model = model.to(device)
         model.eval()
-        
+
         return model, tokenizer, device, "huggingface"
-            
+
     except Exception as e:
         st.error(f"Error loading model: {str(e)}")
         return None, None, None, None
