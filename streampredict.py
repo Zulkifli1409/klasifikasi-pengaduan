@@ -90,6 +90,7 @@ st.markdown(
 # LOAD MODEL (dengan caching)
 # ===============================================
 @st.cache_resource
+@st.cache_resource
 def load_model():
     try:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -97,12 +98,12 @@ def load_model():
         st.info("🔄 Loading model from Hugging Face Hub...")
         model_name = "Zulkifli1409/aduan-model"
 
+        # load tokenizer dan config
         tokenizer = AutoTokenizer.from_pretrained(model_name)
-
-        # 🔥 Load config dan pastikan num_labels = 5
         config = AutoConfig.from_pretrained(model_name)
-        config.num_labels = 5  # PINALTI, DARURAT, PRIORITAS, UMUM, LAINNYA
+        config.num_labels = 5  # pastikan sesuai jumlah kelas
 
+        # load model (sekarang otomatis baca model.safetensors)
         model = AutoModelForSequenceClassification.from_pretrained(
             model_name,
             config=config,
@@ -113,12 +114,12 @@ def load_model():
         model = model.to(device)
         model.eval()
 
+        st.success("✅ Model IndoBERT berhasil dimuat dari Hugging Face!")
         return model, tokenizer, device, "huggingface"
 
     except Exception as e:
         st.error(f"❌ Error loading model: {str(e)}")
         return None, None, None, None
-
 
 # ===============================================
 # PREDIKSI FUNCTION - BASIC
